@@ -11,15 +11,23 @@ const PomodoroTimer = () => {
   // 音效 Ref (使用免費的輕柔提示音)
   const audioRef = useRef(null);
 
-  // 請求通知權限
+  // 初始化音效 (移除自動請求權限，改為被動觸發)
   useEffect(() => {
-    if ('Notification' in window) {
-      Notification.requestPermission().then((perm) => {
-        setPermission(perm);
-      });
-    }
-    // 初始化音效物件 (使用更柔和的風鈴聲或冥想音效)
+    // 初始化音效物件
     audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    
+    // 檢查目前權限狀態，但不主動請求
+    if ('Notification' in window) {
+      setPermission(Notification.permission);
+    }
+
+    return () => {
+      // 組件卸載時清理音效
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
   }, []);
 
   // 更新瀏覽器標題與倒數計時邏輯
@@ -44,19 +52,31 @@ const PomodoroTimer = () => {
     return () => clearInterval(interval);
   }, [isActive, timeLeft]);
 
+  // 請求通知權限的函數 (使用者互動時呼叫)
+  const requestNotificationPermission = async () => {
+    if ('Notification' in window && permission === 'default') {
+      const perm = await Notification.requestPermission();
+      setPermission(perm);
+    }
+  };
+
   // 處理時間結束
   const handleFinish = () => {
     setIsActive(false);
     
     if (audioRef.current) {
-      audioRef.current.play().catch(e => console.log("Audio play failed:", e));
+      audioRef.current.play().catch(e => console.error("Audio play failed (browser policy):", e));
     }
 
     if (permission === 'granted') {
-      new Notification("靜謐時光", {
-        body: "此刻，深呼吸，感受當下。",
-        icon: "https://cdn-icons-png.flaticon.com/512/3655/3655589.png" // 蓮花或禪意圖示
-      });
+      try {
+        new Notification("靜謐時光", {
+          body: "此刻，深呼吸，感受當下。",
+          icon: "https://cdn-icons-png.flaticon.com/512/3655/3655589.png" // 蓮花或禪意圖示
+        });
+      } catch (e) {
+        console.error("Notification failed:", e);
+      }
     }
   };
 
@@ -84,6 +104,11 @@ const PomodoroTimer = () => {
 
   // 按鈕功能
   const toggleTimer = () => {
+    // 首次點擊開始時，請求通知權限
+    if (!isActive && permission === 'default') {
+      requestNotificationPermission();
+    }
+
     // 如果輸入欄位是空的或不合法，恢復預設值
     if (customMinutes === '' || customMinutes <= 0) {
       setCustomMinutes(25);
@@ -91,6 +116,8 @@ const PomodoroTimer = () => {
     }
     
     setIsActive(!isActive);
+    
+    // 預先加載音效以避免移動端延遲
     if (!isActive && audioRef.current) {
       audioRef.current.load(); 
     }
@@ -108,7 +135,8 @@ const PomodoroTimer = () => {
 
   return (
     <div 
-      className="min-h-screen w-full flex items-center justify-center bg-cover bg-center bg-no-repeat relative overflow-hidden font-sans"
+      // 使用 min-h-[100dvh] 確保在手機瀏覽器上高度正確，不會因為網址列伸縮而跳動
+      className="min-h-screen h-[100dvh] w-full flex items-center justify-center bg-cover bg-center bg-no-repeat relative overflow-hidden font-sans"
       style={{ backgroundImage: `url(${bgImage})` }}
     >
       {/* 遮罩加強，營造沉穩感 */}
@@ -144,7 +172,8 @@ const PomodoroTimer = () => {
             value={customMinutes}
             onChange={handleTimeChange}
             disabled={isActive}
-            className="w-16 bg-transparent border-b border-stone-400/50 text-center text-xl focus:outline-none focus:border-teal-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            // 寬度從 w-16 增加到 w-20 以適應不同字體
+            className="w-20 bg-transparent border-b border-stone-400/50 text-center text-xl focus:outline-none focus:border-teal-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           />
         </div>
 
